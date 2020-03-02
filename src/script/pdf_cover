@@ -1,0 +1,62 @@
+#!/bin/bash
+
+# This script
+
+CMDPATH=`realpath "${0}"`
+CMDNME=$(basename "${CMDPATH}")
+CMDDIR=$(dirname "${CMDPATH}")
+
+if [ $# -lt 1 ]
+then
+	echo "Syntax: ${CMDNME} [options] pdf_file [pdf_file...]"
+	echo "Options:"
+	echo "  -c <bmp|jpeg|jpeg2000|png>   Extract cover in the specified format."
+	echo "                               Default is jpeg."
+	echo "  -o <vm_options>              Additional Java VM options."
+	echo "                               Use -o \"-Xms8192m -Xmx8192m\" for large PDFs."
+	echo "  -p <[0-9]+>                  Cover page index [0-9]+. The -c option must"
+	echo "                               also be specified. Default is 0."
+	exit 1
+fi
+
+#echo "${@}"
+
+OPTIONS=""
+VM_OPTIONS=""
+PDF_LIST=""
+while [ $# -gt 0 ]
+do
+  case "${1}" in
+    "-c" | "-p" )
+      OPTIONS="${OPTIONS} ${1} ${2}"
+      shift
+      ;;
+    "-o")
+      VM_OPTIONS="${2}"
+      shift
+      ;;
+    *)
+      PDF_LIST="${PDF_LIST}${1},"
+      ;;
+  esac
+  shift
+done
+
+PDF_LIST="${PDF_LIST::-1}"
+
+# Specifiy the location of Java
+JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64"
+if [ "${OS:0:7}" == "Windows" ]
+then
+    JAVA_HOME="/c/Program Files/Java/jre1.8.0_172"
+fi
+PATH=${JAVA_HOME}/bin:${PATH}
+
+JARFILE="${CMDDIR}/PdfUtil-jar-with-dependencies.jar"
+
+IFS=',' read -r -a PDFS <<< "${PDF_LIST}"
+for i in "${PDFS[@]}"
+do
+  echo java ${VM_OPTIONS} -jar "${JARFILE}" cover ${OPTIONS} "${i}"
+  java ${VM_OPTIONS} -jar "${JARFILE}" cover ${OPTIONS} "${i}"
+done
