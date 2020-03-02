@@ -54,9 +54,12 @@ PATH=${JAVA_HOME}/bin:${PATH}
 
 JARFILE="${CMDDIR}/PdfUtil-jar-with-dependencies.jar"
 
-IFS=',' read -r -a PDFS <<< "${PDF_LIST}"
-for i in "${PDFS[@]}"
-do
-  echo java ${VM_OPTIONS} -jar "${JARFILE}" cover ${OPTIONS} "${i}"
-  java ${VM_OPTIONS} -jar "${JARFILE}" cover ${OPTIONS} "${i}"
-done
+echo java ${VM_OPTIONS} -jar "${JARFILE}" outline ${OPTIONS} ${PDF_LIST}
+java ${VM_OPTIONS} -jar "${JARFILE}" outline ${OPTIONS} ${PDF_LIST}
+
+#IFS=',' read -r -a PDFS <<< "${PDF_LIST}"
+#for i in "${PDFS[@]}"
+#do
+#  echo java ${VM_OPTIONS} -jar "${JARFILE}" cover ${OPTIONS} "${i}"
+#  java ${VM_OPTIONS} -jar "${JARFILE}" cover ${OPTIONS} "${i}"
+#done
