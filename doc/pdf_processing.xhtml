@@ -1,55 +1,142 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--Arbortext, Inc., 1988-2016, v.4002-->
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-<title>PDF Processing</title>
+<title>MPS PDF Processing Utilities</title>
 </head>
-<body><section id="PDF_Processing"><h1>PDF Processing</h1><p>Currently,
-a PDF can be processed in the following manner:</p><ol>
+<body><section id="PDF_Processing"><h1><u>MPS PDF Processing Utilities</u
+></h1><p>Below are descriptions for utilities for processing PDFs
+by the MPS team.</p><p>The script for performing the processing resides
+at the following location:</p><p><strong>ROOTDIR = tang.umdl.umich.edu:/quod-prep/prep/a/acls/mpspdfutil</strong
+></p><section><h2>PDF Optimization</h2><p>This utility can be used
+to provide optimization to one or more PDFs. Currently, a PDF can
+be optimized in the following manner:</p><ol>
 <li><p>Selected Images within the PDF can be resized by a specified
 percentage.</p></li>
 <li><p>Selected Images within the PDF can be converted to a specified
 format.</p></li>
 <li><p>A page index representing the cover image can be specified
 and extracted to a specified format.</p></li>
-</ol><p>The script for performing the processing resides at the following
-location:</p>
-<p><strong>ROOTDIR = tang.umdl.umich.edu:/quod-prep/prep/a/acls/winterberry/</strong></p>
-<p>Below is the list of possible parameters:</p>
-<pre>
-<code><b>usage: optimize [options] pdf_file [pdf_file...]
- -c,--cover_format       Extract cover in the format [bmp|jpeg|jpeg2000|png].
- -f,--image_format       Resize images in the format [bmp|jpeg|jpeg2000|png]. The default is jpeg.
- -p,--cover_page         Cover page index [0-9]+. The --cover_format option must also be specified. Default is 0.
- -r,--resize_pct         Resize %. The default is 100.
- -t,--dimen_threshold    Dimension threshold [0-9]+. The default is 0.</b></code></pre>
-<p>The resulting PDF will have the suffix <i>_optimize_{resize_pct}pct</i
-> appended to its filename. For example, if the specified PDF has
-the filename <i>ebookISBN</i> and it is resized to be 80% as the <code
->&#x2013;resize_pct 80</code> option is provided, then the resulting
-PDF will have the name <i>ebookISBN_optimize_80pct.pdf</i>.</p>
- <p>Below are a few sample invocations:</p>
-<ol>
+<li><p>For a PDF with the file name <i>ebookISBN.pdf</i>, </p></li>
+</ol><p>Below is the script usage syntax:</p><pre>
+<code><b>usage: pdf_optimize [options] pdf_file [pdf_file...]
+ -c   Extract cover in the format 
+      [bmp|jpeg|jpeg2000|png].
+ -f   Resize images in the format 
+      [bmp|jpeg|jpeg2000|png].
+      The default is jpeg.
+ -o   Additional Java VM options.
+      Use -o "-Xms8192m -Xmx8192m" for large PDFs.
+ -p   Cover page index [0-9]+.
+      The --cover_format option must also be specified.
+      Default is 0.
+ -r   Resize %. The default is 100.
+ -t   Dimension threshold [0-9]+.
+      The default is 0.</b></code></pre><p>The resulting PDF will
+have the suffix <i>_optimize_{resize_pct}pct</i> appended to its filename.
+For example, if the specified PDF has the filename <i>ebookISBN</i
+> and it is resized to be 80% as the <code>&#x2013;resize_pct 80</code
+> option is provided, then the resulting PDF will have the name <i
+>ebookISBN_optimize_80pct.pdf</i>. If there exists a PDF in the same
+directory with the file name <i>ebookISBN_web.pdf</i>, then the bookmarks
+from <i>ebookISBN_web.pdf</i> will be copied into the resulting optimized
+PDF.</p><p>Below are a few sample invocations:</p><ol>
 <li><p>To maintain the original size of all images within a PDF and
-use the JPEG format, invoke the following command:</p>
-<p><code><b>ROOTDIR</b>/script/pdf_optimize -f jpeg /mnt/umptmm/MPS/BAR/compression/9781407336138/9781407336138.pdf</code></p>
-</li>
+use the JPEG format, invoke the following command:</p> <p><code><b
+>ROOTDIR</b>/script/pdf_optimize -f jpeg /mnt/umptmm/MPS/BAR/compression/9781407336138/9781407336138.pdf</code
+></p> </li>
 <li><p>To resize all images within a PDF to be 80% of their original
-size and use the JPEG format, invoke the following command:</p>
-<p><code><b>ROOTDIR</b>/script/pdf_optimize -r 80 -f jpeg /mnt/umptmm/MPS/BAR/compression/9781407336138/9781407336138.pdf</code></p>
-</li>
+size and use the JPEG format, invoke the following command:</p> <p
+><code><b>ROOTDIR</b>/script/pdf_optimize -r 80 -f jpeg /mnt/umptmm/MPS/BAR/compression/9781407336138/9781407336138.pdf</code
+></p> </li>
 <li><p>To resize all images within a PDF to be 80% of their original
 size, use the JPEG format, and extract the first page as the cover
-in the PNG format, invoke the following command:</p>
-<p><code><b>ROOTDIR</b>/script/pdf_optimize -r 80 -f jpeg -c png -p 0 /mnt/umptmm/MPS/BAR/compression/9781407336138/9781407336138.pdf</code></p>
-</li>
+in the PNG format, invoke the following command:</p> <p><code><b>ROOTDIR</b
+>/script/pdf_optimize -r 80 -f jpeg -c png -p 0 /mnt/umptmm/MPS/BAR/compression/9781407336138/9781407336138.pdf</code
+></p> </li>
 <li><p>To resize all images within a PDF with both the width and height
 dimensions 1000 pixels or greater to be 80% of their original size
-and use the JPEG format, invoke the following command (NOTE: in this example,
-the nice command sets the scheduling priority to the least favorable value of 19):</p>
-<p><code>nice -19 <b>ROOTDIR</b>/script/pdf_optimize -r 80 -f jpeg -t 1000 /mnt/umptmm/MPS/BAR/compression/9781407336138/9781407336138.pdf</code></p>
-</li>
-</ol>
-</section>
-</body>
+and use the JPEG format, invoke the following command (NOTE: in this
+example, the nice command sets the scheduling priority to the least
+favorable value of 19):</p> <p><code>nice -19 <b>ROOTDIR</b>/script/pdf_optimize
+-r 80 -f jpeg -t 1000 /mnt/umptmm/MPS/BAR/compression/9781407336138/9781407336138.pdf</code
+></p> </li>
+</ol></section><section><h2>PDF Cover</h2><p>This utility can be used
+to extract a cover page from a PDF. Below is the script usage syntax:</p
+><pre>
+<code><b>pdf_cover [options] pdf_file [pdf_file...]
+ -c   Extract cover in the format 
+      [bmp|jpeg|jpeg2000|png].
+ -o   Additional Java VM options.
+      Use -o "-Xms8192m -Xmx8192m" for large PDFs.
+ -p   Cover page index [0-9]+.
+      The --cover_format option must also be specified.
+      Default is 0.</b></code></pre><p>The resulting PDF will have
+the suffix <i>_cover</i> appended to its filename and extension will
+be extract cover format. For example, if the specified PDF has the
+filename <i>ebookISBN</i> and the cover is extracted from page 0 with
+the <code>&#x2013;c png</code> option, then the resulting PDF will
+have the name <i>ebookISBN_cover.png</i>.</p><p>Below are a few sample
+invocations:</p><ol>
+<li><p>To extract a cover from page 5 and store it as a PNG file,
+invoke the following command:</p> <p><code><b>ROOTDIR</b>/script/pdf_cover
+-c png -p 5 /mnt/umptmm/MPS/BAR/compression/9781407336138/9781407336138.pdf</code
+></p> </li>
+<li><p>To extract a cover from page 0 and store it as a JPEG file,
+invoke the following command:</p> <p><code><b>ROOTDIR</b>/script/pdf_cover
+-c jpeg /mnt/umptmm/MPS/BAR/compression/9781407336138/9781407336138.pdf</code
+></p><p>In this case, the <code>&#x2013;p</code> is not provided,
+so page 0 is used by default.</p> </li>
+</ol></section><section><h2>PDF Outline</h2><p>This utility can be
+used to generate a new PDF that contains bookmarks copied from another.
+Below is the script usage syntax:</p><pre>
+<code><b>pdf_outline [options] pdf_file [pdf_file...]
+ -c   Extract cover in the format 
+      [bmp|jpeg|jpeg2000|png].
+ -o   Additional Java VM options.
+      Use -o "-Xms8192m -Xmx8192m" for large PDFs.
+ -p   Cover page index [0-9]+.
+      The --cover_format option must also be specified.
+      Default is 0.</b></code></pre><p>The resulting PDF will have
+the suffix <i>_outline</i> appended to its filename. For example,
+if the specified PDF has the filename <i>ebookISBN</i>, then the resulting
+PDF will have the name <i>ebookISBN_outline.pdf</i>. If another PDF
+that has the file name <i>ebookISBN_web.pdf</i> exists within the
+same directory, then the bookmarks from <i>ebookISBN_web.pdf</i> will
+be copied into the resulting optimized PDF.</p><p>Below are a few
+sample invocations:</p><ol>
+<li><p>To generate a new PDF with copied bookmarks, invoke the following
+command:</p> <p><code><b>ROOTDIR</b>/script/pdf_outline /mnt/umptmm/MPS/BAR/compression/9781407336138/9781407336138.pdf</code
+></p> </li>
+<li><p>To generate a new PDF with copied bookmarks and extract a cover
+as a PNG from page 3, invoke the following command:</p> <p><code><b
+>ROOTDIR</b>/script/pdf_outline -c png -p 3 /mnt/umptmm/MPS/BAR/compression/9781407336138/9781407336138.pdf</code
+></p> </li>
+</ol></section><section><h2>PDF Outline Exists</h2><p>This utility
+can be used to determine if one or more PDFs contains bookmarks. Below
+is the script usage syntax:</p><pre>
+<code><b>pdf_has_outline [options] pdf_file [pdf_file...]
+ -v   Display bookmark titles/pages.
+ -o   Additional Java VM options.
+      Use -o "-Xms8192m -Xmx8192m" for large PDFs.</b></code></pre
+><p>By default, the total number of bookmarks is displayed. If an
+invalid bookmark is detected, the it is acknowledged in the error
+count. If the <code>-v</code> is specified, then bookmark titles are
+listed.</p><p>Below are a few sample invocations:</p><ol>
+<li><p>To determine the total number of bookmarks, invoke the following
+command:</p> <p><code><b>ROOTDIR</b>/script/pdf_has_outline /mnt/umptmm/MPS/BAR/compression/9781407338859/9781407338859.pdf</code
+></p><p>Below is sample resulting output:</p><p><code>"9781407338859.pdf"
+total bookmarks: 12  errors: 0</code></p> </li>
+<li><p>To determine the total number of bookmarks and list , invoke
+the following command:</p> <p><code><b>ROOTDIR</b>/script/pdf_has_outline
+/mnt/umptmm/MPS/BAR/compression/9781407338859/9781407338859.pdf</code
+></p><p>Below is sample resulting output:</p><p>"9781407338859.pdf"
+total bookmarks: 12  errors: 0</p><p>        Page 1: "Cover"</p><p
+>        Page 4: "copyright"</p><p>        Page 5: "Contents"</p><p
+>        Page 7: "Foreword"</p><p>        Page 8: "Acknowledgements"</p
+><p>        Page 9: "List of illustrations"</p><p>        Page 11:
+"Introduction"</p><p>        Page 12: "Major milestones in Hungarian
+Early Neolithic research during the 20th century"</p></li>
+</ol></section> </section> </body>
 </html>
