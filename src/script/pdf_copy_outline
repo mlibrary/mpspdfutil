@@ -10,6 +10,8 @@ if [ $# -lt 1 ]
 then
 	echo "Syntax: ${CMDNME} [options] pdf_file [pdf_file...]"
 	echo "Options:"
+	echo "  -a                           Add entries to the existing source"
+	echo "                               document outline."
 	echo "  -c <bmp|jpeg|jpeg2000|png>   Extract cover in the specified format."
 	echo "                               Default is jpeg."
 	echo "  -o <vm_options>              Additional Java VM options."
