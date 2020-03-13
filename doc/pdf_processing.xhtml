@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
 <title>MPS PDF Processing Utilities</title>
@@ -87,10 +86,11 @@ invoke the following command:</p> <p><code><b>ROOTDIR</b>/script/pdf_cover
 -c jpeg /mnt/umptmm/MPS/BAR/compression/9781407336138/9781407336138.pdf</code
 ></p><p>In this case, the <code>&#x2013;p</code> is not provided,
 so page 0 is used by default.</p> </li>
-</ol></section><section><h2>PDF Outline</h2><p>This utility can be
-used to generate a new PDF that contains bookmarks copied from another.
-Below is the script usage syntax:</p><pre>
-<code><b>pdf_outline [options] pdf_file [pdf_file...]
+</ol></section><section><h2>PDF Copy Outline</h2><p>This utility can
+be used to generate a new PDF that contains bookmarks copied from
+another. Below is the script usage syntax:</p><pre>
+<code><b>pdf_copy_outline [options] pdf_file [pdf_file...]
+ -a   Add entries to the existing source document outline
  -c   Extract cover in the format 
       [bmp|jpeg|jpeg2000|png].
  -o   Additional Java VM options.
@@ -106,11 +106,11 @@ same directory, then the bookmarks from <i>ebookISBN_web.pdf</i> will
 be copied into the resulting optimized PDF.</p><p>Below are a few
 sample invocations:</p><ol>
 <li><p>To generate a new PDF with copied bookmarks, invoke the following
-command:</p> <p><code><b>ROOTDIR</b>/script/pdf_outline /mnt/umptmm/MPS/BAR/compression/9781407336138/9781407336138.pdf</code
+command:</p> <p><code><b>ROOTDIR</b>/script/pdf_copy_outline /mnt/umptmm/MPS/BAR/compression/9781407336138/9781407336138.pdf</code
 ></p> </li>
 <li><p>To generate a new PDF with copied bookmarks and extract a cover
 as a PNG from page 3, invoke the following command:</p> <p><code><b
->ROOTDIR</b>/script/pdf_outline -c png -p 3 /mnt/umptmm/MPS/BAR/compression/9781407336138/9781407336138.pdf</code
+>ROOTDIR</b>/script/pdf_copy_outline -c png -p 3 /mnt/umptmm/MPS/BAR/compression/9781407336138/9781407336138.pdf</code
 ></p> </li>
 </ol></section><section><h2>PDF Outline Exists</h2><p>This utility
 can be used to determine if one or more PDFs contains bookmarks. Below
