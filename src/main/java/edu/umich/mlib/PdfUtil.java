@@ -12,6 +12,7 @@ import org.apache.pdfbox.filter.MissingImageReaderException;
 import org.apache.pdfbox.io.IOUtils;
 import org.apache.pdfbox.pdfparser.PDFStreamParser;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDDocumentCatalog;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.common.PDStream;
@@ -52,16 +53,17 @@ import java.util.List;
 public class PdfUtil
 {
     private enum FuncCode {
+        COPY_OUTLINE,
         COVER,
         EPUB,
         EXTRACT,
+        FIX_OUTLINE,
         FONTS,
         INFO,
         KAKADU,
         OBJECTS,
         OPTIMIZE,
         HAS_OUTLINE,
-        OUTLINE,
         CODERS,
         REPLACE,
         RESIZE,
@@ -77,16 +79,17 @@ public class PdfUtil
 
     private static Map<String, FuncCode> STRING2FUNC = new HashMap<>();
     static {
+        STRING2FUNC.put("copy_outline", FuncCode.COPY_OUTLINE);
         STRING2FUNC.put("cover", FuncCode.COVER);
         STRING2FUNC.put("epub", FuncCode.EPUB);
         STRING2FUNC.put("extract", FuncCode.EXTRACT);
+        STRING2FUNC.put("fix_outline", FuncCode.FIX_OUTLINE);
         STRING2FUNC.put("fonts", FuncCode.FONTS);
         STRING2FUNC.put("info", FuncCode.INFO);
         STRING2FUNC.put("kakadu", FuncCode.KAKADU);
         STRING2FUNC.put("objects", FuncCode.OBJECTS);
         STRING2FUNC.put("optimize", FuncCode.OPTIMIZE);
         STRING2FUNC.put("has_outline", FuncCode.HAS_OUTLINE);
-        STRING2FUNC.put("outline", FuncCode.OUTLINE);
         STRING2FUNC.put("coders", FuncCode.CODERS);
         STRING2FUNC.put("replace", FuncCode.REPLACE);
         STRING2FUNC.put("resize", FuncCode.RESIZE);
@@ -141,6 +144,9 @@ public class PdfUtil
         System.setProperty("sun.java2d.cmm", "sun.java2d.cmm.kcms.KcmsServiceProvider");
         try {
             switch (funcCode) {
+                case COPY_OUTLINE:
+                    copyOutlinePDF(args);
+                    break;
                 case COVER:
                     coverPDF(args);
                     break;
@@ -149,6 +155,9 @@ public class PdfUtil
                     break;
                 case EXTRACT:
                     extractPDF(args);
+                    break;
+                case FIX_OUTLINE:
+                    fixOutline(args);
                     break;
                 case FONTS:
                     extractFonts(args);
@@ -167,10 +176,6 @@ public class PdfUtil
                     break;
                 case HAS_OUTLINE:
                     hasOutlinePDF(args);
-                    break;
-                case OUTLINE:
-                    //extractPDFOutline(args);
-                    outlinePDF(args);
                     break;
                 case REPLACE:
                     replacePDF(args);
@@ -192,144 +197,10 @@ public class PdfUtil
         }
     }
 
-    private static void dumpCoders(
-            String[] params
-        ) throws Exception
-    {
-        System.out.printf("Executing function \"%s\"\n", params[0]);
-        if (params.length < 1) {
-            throw new Exception(String.format("Usage: %s", params[0]));
-        }
-
-        /*
-        System.out.println("Reader suffixes:");
-        String[] readerFileSuffixes = ImageIO.getReaderFileSuffixes();
-        for (String suffix : readerFileSuffixes) {
-            System.out.println(suffix);
-        }
-
-        System.out.println("Writer suffixes:");
-        String[] writerFileSuffixes = ImageIO.getWriterFileSuffixes();
-        for (String suffix : writerFileSuffixes) {
-            System.out.println(suffix);
-        }
-        */
-
-        System.out.println("Writer formats:");
-        String[] writerFormats = ImageIO.getWriterFormatNames();
-        for (String format : writerFormats) {
-            System.out.println(format);
-        }
-     }
-
-    private static void extractPDFOutline(
-            String[] params
-        ) throws Exception
-    {
-        System.out.printf("Executing function \"%s\"\n", params[0]);
-        if (params.length < 2) {
-            throw new Exception(String.format("Usage: %s <pdf_file> [<pdf_file>...]", params[0]));
-        }
-
-        for (int i = 1; i < params.length; i++) {
-            String pdfFileName = params[i];
-            File pdfFile = new File(pdfFileName);
-            if (!pdfFile.exists()) {
-                throw new Exception(String.format("Error: invalid file path \"%s\".", pdfFileName));
-            }
-
-            int extPos = pdfFile.getName().lastIndexOf(".");
-            String baseName = extPos == -1 ?
-                    pdfFile.getName() : pdfFile.getName().substring(0, extPos);
-            File pdfWebFile = new File(pdfFile.getAbsoluteFile().getParentFile(), baseName + "_web.pdf");
-            if (!pdfWebFile.exists()) {
-                throw new Exception(String.format("Error: invalid file path \"%s\".", pdfWebFile.getAbsolutePath()));
-            }
-
-            PDDocument pdfDoc = PDDocument.load(pdfFile);
-            PDDocument pdfWebDoc = PDDocument.load(pdfWebFile);
-
-            PDDocumentOutline outline = pdfWebDoc.getDocumentCatalog().getDocumentOutline();
-            if (outline == null) {
-                throw new Exception(String.format("Error: no document outline in \"%s\".\n.", pdfWebFile.getName()));
-            }
-
-            PDDocumentOutline newOutline = pdfDoc.getDocumentCatalog().getDocumentOutline();
-            if (newOutline == null) {
-                //newOutline = new PDDocumentOutline(pdfDoc.getDocument().getEncryptionDictionary());
-                newOutline = new PDDocumentOutline();
-                pdfDoc.getDocumentCatalog().setDocumentOutline(newOutline);
-                System.out.printf("Created new document outline for \"%s\".\n", pdfFile.getName());
-            }
-
-            PDOutlineItem item = outline.getFirstChild();
-            while( item != null )
-            {
-                PDPageDestination pd = null;
-
-                System.out.printf( "Item: \"%s\"\n", item.getTitle());
-                if (item.getDestination() instanceof PDPageDestination)
-                {
-                    pd = (PDPageDestination) item.getDestination();
-                    System.out.println("1,Destination page: " + (pd.retrievePageNumber() + 1));
-                }
-                else if (item.getDestination() instanceof PDNamedDestination)
-                {
-                    pd = pdfWebDoc.getDocumentCatalog().findNamedDestinationPage((PDNamedDestination) item.getDestination());
-                    if (pd != null)
-                    {
-                        System.out.println("2,Destination page: " + (pd.retrievePageNumber() + 1));
-                    }
-                }
-
-                if (item.getAction() instanceof PDActionGoTo)
-                {
-                    PDActionGoTo gta = (PDActionGoTo) item.getAction();
-                    if (gta.getDestination() instanceof PDPageDestination)
-                    {
-                        pd = (PDPageDestination) gta.getDestination();
-                        System.out.printf("3,Destination page: %d\n",
-                                (pd.retrievePageNumber() + 1));
-                    }
-                    else if (gta.getDestination() instanceof PDNamedDestination)
-                    {
-                        pd = pdfWebDoc.getDocumentCatalog().findNamedDestinationPage((PDNamedDestination) gta.getDestination());
-                        if (pd != null)
-                        {
-                            System.out.println("4,Destination page: " + (pd.retrievePageNumber() + 1));
-
-                        }
-                    }
-                }
-                if (pd == null) {
-                    throw new Exception("Error: no page destination found.");
-                }
-
-                PDOutlineItem newItem = new PDOutlineItem();
-                PDActionGoTo action = new PDActionGoTo();
-                PDPageXYZDestination newPd = new PDPageXYZDestination();
-                PDPage page = pdfDoc.getPage(pd.retrievePageNumber());
-                newPd.setPage(page);
-                action.setDestination(newPd);
-
-                newItem.setAction(action);
-                newItem.setTitle(item.getTitle());
-                newOutline.addLast(newItem);
-
-                item = item.getNextSibling();
-            }
-
-            File outputPDFFile = new File(pdfFile.getAbsoluteFile().getParent(), baseName + "_outline.pdf");
-            pdfDoc.save(outputPDFFile);
-
-            pdfWebDoc.close();
-            pdfDoc.close();
-        }
-    }
-
     private static void copyOutline(
             PDDocument pdfDoc,
-            PDDocument pdfWebDoc
+            PDDocument pdfWebDoc,
+            boolean addEntries
         ) throws Exception
     {
         PDDocumentOutline outline = pdfWebDoc.getDocumentCatalog().getDocumentOutline();
@@ -338,11 +209,15 @@ public class PdfUtil
             return;
         }
 
-        PDDocumentOutline newOutline = pdfDoc.getDocumentCatalog().getDocumentOutline();
+        PDDocumentOutline newOutline = addEntries ?
+                pdfDoc.getDocumentCatalog().getDocumentOutline() :
+                null;
         if (newOutline == null) {
             System.out.println("Creating new destination document outline.");
             newOutline = new PDDocumentOutline();
             pdfDoc.getDocumentCatalog().setDocumentOutline(newOutline);
+        } else {
+            System.out.println("Adding entries to existing source document outline.");
         }
 
         PDOutlineItem item = outline.getFirstChild();
@@ -400,6 +275,82 @@ public class PdfUtil
             newOutline.addLast(newItem);
 
             item = item.getNextSibling();
+        }
+    }
+
+    private static void copyOutlinePDF(
+            String[] params
+    ) throws Exception
+    {
+        System.out.printf("Executing function \"%s\"\n", params[0]);
+
+        Options options = new Options();
+        options.addOption("a", "add_entries", false, "Add to existing outline, if exists" );
+        options.addOption("c", "cover_format", true, "Cover format [bmp|jpeg|jpeg2000|png]" );
+        options.addOption("p", "cover_page", true, "Cover page [0-9]+" );
+
+        CommandLineParser parser = new DefaultParser();
+        CommandLine cmdLine = null;
+        boolean displayHelp = params.length < 2;
+        if (params.length > 1) {
+            try {
+                cmdLine = parser.parse(options, params);
+            } catch (ParseException e) {
+                displayHelp = true;
+                System.out.printf("Error: %s\n", e.getLocalizedMessage());
+            }
+        }
+        if (displayHelp) {
+            HelpFormatter formatter = new HelpFormatter();
+            formatter.printHelp("optimize [options] pdf_file [pdf_file...]", options);
+            return;
+        }
+
+        FormatType coverFormatType = cmdLine.hasOption("c") ? STRING2FORMAT.get(cmdLine.getOptionValue("c")) : null;
+        int coverPageNumber = Integer.parseInt(cmdLine.getOptionValue("p", "0"));
+        boolean addEntries = cmdLine.hasOption("a");
+
+        List<String> pdfFileList = cmdLine.getArgList();
+        for (String pdfFileName : pdfFileList.subList(1, pdfFileList.size())) {
+            File pdfFile = new File(pdfFileName);
+            if (!pdfFile.exists()) {
+                throw new Exception(String.format("Error: invalid file path \"%s\".", pdfFileName));
+            }
+
+            int extPos = pdfFile.getName().lastIndexOf(".");
+            String baseName = extPos == -1 ?
+                    pdfFile.getName() : pdfFile.getName().substring(0, extPos);
+
+            PDDocument pdfDoc = PDDocument.load(pdfFile);
+
+            if (coverPageNumber >= 0 && coverPageNumber < pdfDoc.getNumberOfPages() && coverFormatType != null) {
+                // Extract the cover.
+                String ext = FORMAT2EXT.get(coverFormatType);
+                String outputCoverPath = String.format("%s_cover.%s", baseName, ext);
+                File outputCoverFile = new File(pdfFile.getAbsoluteFile().getParentFile(), outputCoverPath);
+                coverPDFImages(
+                        pdfDoc,
+                        coverPageNumber,
+                        coverFormatType,
+                        outputCoverFile
+                );
+            }
+
+            File pdfWebFile = new File(pdfFile.getAbsoluteFile().getParentFile(), baseName + "_web.pdf");
+            if (pdfWebFile.exists()) {
+                // Copy the bookmarks.
+                System.out.printf("Web file \"%s\" exists, copying the bookmarks.\n", pdfWebFile.getName());
+                PDDocument pdfWebDoc = PDDocument.load(pdfWebFile);
+                copyOutline(pdfDoc, pdfWebDoc, addEntries);
+                pdfWebDoc.close();
+
+                // Save the modified PDF to a new name.
+                String outputPDFPath = String.format("%s_outline.pdf", baseName);
+                File outputPDFFile = new File(pdfFile.getAbsoluteFile().getParent(), outputPDFPath);
+                System.out.printf("Saving file \"%s\".\n", outputPDFFile.getName());
+                pdfDoc.save(outputPDFFile);
+            }
+            pdfDoc.close();
         }
     }
 
@@ -903,7 +854,7 @@ public class PdfUtil
                     // Copy the bookmarks.
                     System.out.printf("Web file \"%s\" exists, copying the bookmarks.\n", pdfWebFile.getName());
                     PDDocument pdfWebDoc = PDDocument.load(pdfWebFile);
-                    copyOutline(pdfDoc, pdfWebDoc);
+                    copyOutline(pdfDoc, pdfWebDoc, false);
                     pdfWebDoc.close();
                 }
 
@@ -1079,139 +1030,117 @@ public class PdfUtil
         return true;
     }
 
-    private static void optimizePDFImagesCURRENT2(
-            PDDocument pdfDoc,
-            FormatType formatType,
-            int resizePct,
-            int imageSizeLimit,
-            File outputDirFile
-    ) throws Exception
+    private static void fixOutline(
+            String[] params
+        ) throws Exception
     {
-        // Traverse the source PDF pdfDoc pages.
-        for (int i = 0; i < pdfDoc.getNumberOfPages(); i++) {
-            int pageNum = i + 1;
+        System.out.printf("Executing function \"%s\"\n", params[0]);
 
-            PDPage page = pdfDoc.getPage(i);
+        Options options = new Options();
 
-            // Get the page resources.
-            PDResources resources = page.getResources();
-            Iterable<COSName> xobjectNames = resources.getXObjectNames();
-
-            String extractExt = FORMAT2EXT.get(formatType);
-            String extractType = FORMAT2TYPE.get(formatType);
-
-            // Traverse source page resources.
-            int imageNum = 0;
-            for (COSName name : xobjectNames) {
-                if (resources.isImageXObject(name)) {
-                    imageNum += 1;
-
-                    PDImageXObject imageObj = (PDImageXObject) resources.getXObject(name);
-                    BufferedImage image = imageObj.getImage();
-                    BufferedImage scaledImage = image;
-                    boolean imageScaled = false;
-
-                    int width = image.getWidth();
-                    int height = image.getHeight();
-                    if (width < imageSizeLimit && height < imageSizeLimit) {
-                        System.out.printf("Dimensions: %dx%d less than limit %d. Skipping scaling.\n",
-                                width, height, imageSizeLimit);
-                    } else if (resizePct == 100) {
-                        System.out.printf("Resize pct = %d. Skipping scaling.\n", resizePct);
-                    } else {
-                        Dimension imageDim = new Dimension(width, height);
-                        int newWidth = ((width * resizePct) / 100);
-                        int newHeight = ((height * resizePct) / 100);
-                        Dimension newImageDim = new Dimension(newWidth, newHeight);
-                        System.out.printf("Dimensions: %dx%d => %dx%d\n", width, height,
-                                newWidth, newHeight);
-
-                        Dimension newDim = getScaledDimension(imageDim, newImageDim);
-                        scaledImage = getScaledInstance(
-                                image,
-                                (int) newDim.getWidth(),
-                                (int) newDim.getHeight(),
-                                RenderingHints.VALUE_INTERPOLATION_BICUBIC,
-                                true);
-                        imageScaled = true;
-                    }
-
-                    File outputFile = new File(outputDirFile, String.format("Page_%04d_Image_%04d.%s",
-                            pageNum, imageNum, extractExt));
-
-                    System.out.printf("Optimizing image %s %dx%d\n",
-                            outputFile.getName(), scaledImage.getWidth(), scaledImage.getHeight());
-
-                    // Can't write this as a jpeg2000 because
-                    // PDImageXObject.createFromFile below will
-                    // throw an exception attempting to read a jp2 file.
-                    // Using ImageIO.read will load the jp2 image, but
-                    // LosslessFactory.createFromImage will convert it to a
-                    // PNG and insert it into the PDF as such, thus no file
-                    // size savings.
-                    try {
-                        ImageIO.write(scaledImage, extractType, outputFile);
-                    } catch (IIOException exception) {
-                        // Problem writing image. Log a message and skip it.
-                        System.out.printf("Optimizing image %s %dx%d write FAILED, not replaced.\n",
-                                outputFile.getName(), scaledImage.getWidth(), scaledImage.getHeight());
-                        continue;
-                    }
-
-                    //BufferedImage newImage = ImageIO.read(outputFile);
-                    //PDImageXObject newObj = LosslessFactory.createFromImage(pdfDoc, newImage);
-                    PDImageXObject newObj = PDImageXObject.createFromFile(outputFile.getAbsolutePath(), pdfDoc);
-                    resources.put(name, newObj);
-                }
+        CommandLineParser parser = new DefaultParser();
+        CommandLine cmdLine = null;
+        boolean displayHelp = params.length < 1;
+        if (params.length > 1) {
+            try {
+                cmdLine = parser.parse(options, params);
+            } catch (ParseException e) {
+                displayHelp = true;
+                System.out.printf("Error: %s\n", e.getLocalizedMessage());
             }
         }
-    }
+        if (displayHelp) {
+            HelpFormatter formatter = new HelpFormatter();
+            formatter.printHelp(String.format("%s [options] pdf_file [pdf_file...]", params[0]), options);
+            return;
+        }
 
-    private static void optimizePDFImagesCURRENT(
-            PDDocument pdfDoc,
-            FormatType formatType,
-            File outputDirFile
-    ) throws Exception
-    {
-        // Traverse the source PDF pdfDoc pages.
-        for (int i = 0; i < pdfDoc.getNumberOfPages(); i++) {
-            int pageNum = i + 1;
+        List<String> pdfFileList = cmdLine.getArgList();
+        for (String pdfFileName : pdfFileList.subList(1, pdfFileList.size())) {
+            File pdfFile = new File(pdfFileName);
+            if (!pdfFile.exists()) {
+                System.out.printf("Error: invalid file path \"%s\".\n", pdfFileName);
+                continue;
+            }
+            System.out.printf("Fixing \"%s\".\n", pdfFileName);
 
-            PDPage page = pdfDoc.getPage(i);
+            PDDocument pdfDoc = PDDocument.load(pdfFile);
+            PDDocumentCatalog catalog = pdfDoc.getDocumentCatalog();
+            PDDocumentOutline outline = catalog.getDocumentOutline();
+            if (outline == null) {
+                System.out.printf("\"%s\": Warning: document outline does not exist.\n", pdfFile.getName());
+            } else {
+                PDDocumentOutline newOutline = new PDDocumentOutline();
+                catalog.setDocumentOutline(newOutline);
 
-            // Get the page resources.
-            PDResources resources = page.getResources();
-            Iterable<COSName> xobjectNames = resources.getXObjectNames();
+                PDOutlineItem item = outline.getFirstChild();
+                while( item != null )
+                {
+                    PDPageDestination pd = null;
+                    String title = item.getTitle().trim();
 
-            String extractExt = FORMAT2EXT.get(formatType);
-            String extractType = FORMAT2TYPE.get(formatType);
+                    if (item.getDestination() instanceof PDPageDestination)
+                    {
+                        pd = (PDPageDestination) item.getDestination();
+                    }
+                    else if (item.getDestination() instanceof PDNamedDestination)
+                    {
+                        pd = pdfDoc.getDocumentCatalog().findNamedDestinationPage((PDNamedDestination) item.getDestination());
+                    }
 
-            // Traverse source page resources.
-            int imageNum = 0;
-            for (COSName name : xobjectNames) {
-                if (resources.isImageXObject(name)) {
-                    imageNum += 1;
+                    if (item.getAction() instanceof PDActionGoTo)
+                    {
+                        PDActionGoTo gta = (PDActionGoTo) item.getAction();
+                        if (gta.getDestination() instanceof PDPageDestination)
+                        {
+                            pd = (PDPageDestination) gta.getDestination();
+                        }
+                        else if (gta.getDestination() instanceof PDNamedDestination)
+                        {
+                            pd = pdfDoc.getDocumentCatalog().findNamedDestinationPage((PDNamedDestination) gta.getDestination());
+                        }
+                    }
+                    if (pd == null) {
+                        System.out.printf("Removing bookmark \"%s\"\n", title);
+                    } else {
+                        int pgnum = pd.retrievePageNumber();
+                        if (pgnum >= 0) {
+                            System.out.printf("Adding bookmark \"%s\"\n", title);
+                            PDOutlineItem newItem = new PDOutlineItem();
+                            PDActionGoTo action = new PDActionGoTo();
+                            PDPageXYZDestination newPd = new PDPageXYZDestination();
+                            PDPage page = pdfDoc.getPage(pd.retrievePageNumber());
+                            newPd.setPage(page);
+                            action.setDestination(newPd);
 
-                    PDImageXObject imageObj = (PDImageXObject) resources.getXObject(name);
-                    BufferedImage image = imageObj.getImage();
-
-                    File outputFile = new File(outputDirFile, String.format("Page_%04d_Image_%04d.%s",
-                            pageNum, imageNum, extractExt));
-
-                    System.out.printf("Optimizing image %s %dx%d\n",
-                            outputFile.getName(), image.getWidth(), image.getHeight());
-                    ImageIO.write(image, extractType, outputFile);
-
-                    PDImageXObject newObj = PDImageXObject.createFromFile(outputFile.getAbsolutePath(), pdfDoc);
-                    resources.put(name, newObj);
+                            newItem.setAction(action);
+                            newItem.setTitle(item.getTitle());
+                            newOutline.addLast(newItem);
+                        } else {
+                            System.out.printf("Error: invalid page number %d. Removing bookmark \"%s\"\n", pgnum, title);
+                        }
+                    }
+                    item = item.getNextSibling();
                 }
             }
+
+            // Save the modified PDF to a new name.
+
+            int extPos = pdfFile.getName().lastIndexOf(".");
+            String baseName = extPos == -1 ?
+                    pdfFile.getName() : pdfFile.getName().substring(0, extPos);
+            String outputPDFPath = String.format("%s_fix.pdf", baseName);
+            File outputPDFFile = new File(pdfFile.getAbsoluteFile().getParent(), outputPDFPath);
+            System.out.printf("Saving file \"%s\".\n", outputPDFFile.getName());
+            pdfDoc.save(outputPDFFile);
+
+            pdfDoc.close();
         }
     }
 
     private static void hasOutlinePDF(
             String[] params
-        ) throws Exception
+    ) throws Exception
     {
         System.out.printf("Executing function \"%s\"\n", params[0]);
 
@@ -1307,80 +1236,6 @@ public class PdfUtil
                         System.out.printf("\t%s\n", msg);
                     }
                 }
-            }
-            pdfDoc.close();
-        }
-    }
-
-    private static void outlinePDF(
-            String[] params
-    ) throws Exception
-    {
-        System.out.printf("Executing function \"%s\"\n", params[0]);
-
-        Options options = new Options();
-        options.addOption("c", "cover_format", true, "Cover format [bmp|jpeg|jpeg2000|png]" );
-        options.addOption("p", "cover_page", true, "Cover page [0-9]+" );
-
-        CommandLineParser parser = new DefaultParser();
-        CommandLine cmdLine = null;
-        boolean displayHelp = params.length < 2;
-        if (params.length > 1) {
-            try {
-                cmdLine = parser.parse(options, params);
-            } catch (ParseException e) {
-                displayHelp = true;
-                System.out.printf("Error: %s\n", e.getLocalizedMessage());
-            }
-        }
-        if (displayHelp) {
-            HelpFormatter formatter = new HelpFormatter();
-            formatter.printHelp("optimize [options] pdf_file [pdf_file...]", options);
-            return;
-        }
-
-        FormatType coverFormatType = cmdLine.hasOption("c") ? STRING2FORMAT.get(cmdLine.getOptionValue("c")) : null;
-        int coverPageNumber = Integer.parseInt(cmdLine.getOptionValue("p", "0"));
-
-        List<String> pdfFileList = cmdLine.getArgList();
-        for (String pdfFileName : pdfFileList.subList(1, pdfFileList.size())) {
-            File pdfFile = new File(pdfFileName);
-            if (!pdfFile.exists()) {
-                throw new Exception(String.format("Error: invalid file path \"%s\".", pdfFileName));
-            }
-
-            int extPos = pdfFile.getName().lastIndexOf(".");
-            String baseName = extPos == -1 ?
-                    pdfFile.getName() : pdfFile.getName().substring(0, extPos);
-
-            PDDocument pdfDoc = PDDocument.load(pdfFile);
-
-            if (coverPageNumber >= 0 && coverPageNumber < pdfDoc.getNumberOfPages() && coverFormatType != null) {
-                // Extract the cover.
-                String ext = FORMAT2EXT.get(coverFormatType);
-                String outputCoverPath = String.format("%s_cover.%s", baseName, ext);
-                File outputCoverFile = new File(pdfFile.getAbsoluteFile().getParentFile(), outputCoverPath);
-                coverPDFImages(
-                        pdfDoc,
-                        coverPageNumber,
-                        coverFormatType,
-                        outputCoverFile
-                );
-            }
-
-            File pdfWebFile = new File(pdfFile.getAbsoluteFile().getParentFile(), baseName + "_web.pdf");
-            if (pdfWebFile.exists()) {
-                // Copy the bookmarks.
-                System.out.printf("Web file \"%s\" exists, copying the bookmarks.\n", pdfWebFile.getName());
-                PDDocument pdfWebDoc = PDDocument.load(pdfWebFile);
-                copyOutline(pdfDoc, pdfWebDoc);
-                pdfWebDoc.close();
-
-                // Save the modified PDF to a new name.
-                String outputPDFPath = String.format("%s_outline.pdf", baseName);
-                File outputPDFFile = new File(pdfFile.getAbsoluteFile().getParent(), outputPDFPath);
-                System.out.printf("Saving file \"%s\".\n", outputPDFFile.getName());
-                pdfDoc.save(outputPDFFile);
             }
             pdfDoc.close();
         }
@@ -1865,5 +1720,140 @@ public class PdfUtil
         } while (w != targetWidth || h != targetHeight);
 
         return ret;
+    }
+
+    private static void dumpCoders(
+            String[] params
+    ) throws Exception
+    {
+        System.out.printf("Executing function \"%s\"\n", params[0]);
+        if (params.length < 1) {
+            throw new Exception(String.format("Usage: %s", params[0]));
+        }
+
+        /*
+        System.out.println("Reader suffixes:");
+        String[] readerFileSuffixes = ImageIO.getReaderFileSuffixes();
+        for (String suffix : readerFileSuffixes) {
+            System.out.println(suffix);
+        }
+
+        System.out.println("Writer suffixes:");
+        String[] writerFileSuffixes = ImageIO.getWriterFileSuffixes();
+        for (String suffix : writerFileSuffixes) {
+            System.out.println(suffix);
+        }
+        */
+
+        System.out.println("Writer formats:");
+        String[] writerFormats = ImageIO.getWriterFormatNames();
+        for (String format : writerFormats) {
+            System.out.println(format);
+        }
+    }
+
+    private static void extractPDFOutline(
+            String[] params
+    ) throws Exception
+    {
+        System.out.printf("Executing function \"%s\"\n", params[0]);
+        if (params.length < 2) {
+            throw new Exception(String.format("Usage: %s <pdf_file> [<pdf_file>...]", params[0]));
+        }
+
+        for (int i = 1; i < params.length; i++) {
+            String pdfFileName = params[i];
+            File pdfFile = new File(pdfFileName);
+            if (!pdfFile.exists()) {
+                throw new Exception(String.format("Error: invalid file path \"%s\".", pdfFileName));
+            }
+
+            int extPos = pdfFile.getName().lastIndexOf(".");
+            String baseName = extPos == -1 ?
+                    pdfFile.getName() : pdfFile.getName().substring(0, extPos);
+            File pdfWebFile = new File(pdfFile.getAbsoluteFile().getParentFile(), baseName + "_web.pdf");
+            if (!pdfWebFile.exists()) {
+                throw new Exception(String.format("Error: invalid file path \"%s\".", pdfWebFile.getAbsolutePath()));
+            }
+
+            PDDocument pdfDoc = PDDocument.load(pdfFile);
+            PDDocument pdfWebDoc = PDDocument.load(pdfWebFile);
+
+            PDDocumentOutline outline = pdfWebDoc.getDocumentCatalog().getDocumentOutline();
+            if (outline == null) {
+                throw new Exception(String.format("Error: no document outline in \"%s\".\n.", pdfWebFile.getName()));
+            }
+
+            PDDocumentOutline newOutline = pdfDoc.getDocumentCatalog().getDocumentOutline();
+            if (newOutline == null) {
+                //newOutline = new PDDocumentOutline(pdfDoc.getDocument().getEncryptionDictionary());
+                newOutline = new PDDocumentOutline();
+                pdfDoc.getDocumentCatalog().setDocumentOutline(newOutline);
+                System.out.printf("Created new document outline for \"%s\".\n", pdfFile.getName());
+            }
+
+            PDOutlineItem item = outline.getFirstChild();
+            while( item != null )
+            {
+                PDPageDestination pd = null;
+
+                System.out.printf( "Item: \"%s\"\n", item.getTitle());
+                if (item.getDestination() instanceof PDPageDestination)
+                {
+                    pd = (PDPageDestination) item.getDestination();
+                    System.out.println("1,Destination page: " + (pd.retrievePageNumber() + 1));
+                }
+                else if (item.getDestination() instanceof PDNamedDestination)
+                {
+                    pd = pdfWebDoc.getDocumentCatalog().findNamedDestinationPage((PDNamedDestination) item.getDestination());
+                    if (pd != null)
+                    {
+                        System.out.println("2,Destination page: " + (pd.retrievePageNumber() + 1));
+                    }
+                }
+
+                if (item.getAction() instanceof PDActionGoTo)
+                {
+                    PDActionGoTo gta = (PDActionGoTo) item.getAction();
+                    if (gta.getDestination() instanceof PDPageDestination)
+                    {
+                        pd = (PDPageDestination) gta.getDestination();
+                        System.out.printf("3,Destination page: %d\n",
+                                (pd.retrievePageNumber() + 1));
+                    }
+                    else if (gta.getDestination() instanceof PDNamedDestination)
+                    {
+                        pd = pdfWebDoc.getDocumentCatalog().findNamedDestinationPage((PDNamedDestination) gta.getDestination());
+                        if (pd != null)
+                        {
+                            System.out.println("4,Destination page: " + (pd.retrievePageNumber() + 1));
+
+                        }
+                    }
+                }
+                if (pd == null) {
+                    throw new Exception("Error: no page destination found.");
+                }
+
+                PDOutlineItem newItem = new PDOutlineItem();
+                PDActionGoTo action = new PDActionGoTo();
+                PDPageXYZDestination newPd = new PDPageXYZDestination();
+                PDPage page = pdfDoc.getPage(pd.retrievePageNumber());
+                newPd.setPage(page);
+                action.setDestination(newPd);
+
+                newItem.setAction(action);
+                newItem.setTitle(item.getTitle());
+                newOutline.addLast(newItem);
+
+                item = item.getNextSibling();
+            }
+
+            File outputPDFFile = new File(pdfFile.getAbsoluteFile().getParent(), baseName + "_outline.pdf");
+            pdfDoc.save(outputPDFFile);
+
+            pdfWebDoc.close();
+            pdfDoc.close();
+        }
     }
 }
