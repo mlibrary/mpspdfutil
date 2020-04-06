@@ -1,0 +1,53 @@
+#!/bin/bash
+
+# This script
+
+CMDPATH=`realpath "${0}"`
+CMDNME=$(basename "${CMDPATH}")
+CMDDIR=$(dirname "${CMDPATH}")
+
+#echo "${@}"
+
+FN_NAME="${1}"
+shift
+
+OPTIONS=""
+VM_OPTIONS=""
+PDF_LIST=""
+while [ $# -gt 0 ]
+do
+  case "${1}" in
+    "-c" | "-p" )
+      OPTIONS="${OPTIONS} ${1}"
+      shift
+      ;;
+    "-o")
+      VM_OPTIONS="${2}"
+      shift
+      ;;
+    *)
+      PDF_LIST="${PDF_LIST}${1} "
+      ;;
+  esac
+  shift
+done
+
+PDF_LIST="${PDF_LIST::-1}"
+
+# Specifiy the location of Java
+JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64"
+if [ "${OS:0:7}" == "Windows" ]
+then
+    JAVA_HOME="/c/Program Files/Java/jre1.8.0_172"
+fi
+PATH=${JAVA_HOME}/bin:${PATH}
+
+JARFILE="${CMDDIR}/PdfUtil-jar-with-dependencies.jar"
+
+echo java ${VM_OPTIONS} -jar "${JARFILE}" ${FN_NAME} ${OPTIONS} ${PDF_LIST}
+java ${VM_OPTIONS} -jar "${JARFILE}" ${FN_NAME} ${OPTIONS} ${PDF_LIST}
+
+#IFS=',' read -r -a PDFS <<< "${PDF_LIST}"
+#for i in "${PDFS[@]}"
+#do
+#done

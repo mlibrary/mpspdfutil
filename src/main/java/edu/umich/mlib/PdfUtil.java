@@ -2,6 +2,7 @@ package edu.umich.mlib;
 
 import org.apache.commons.cli.*;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.FilenameUtils;
 import org.apache.pdfbox.contentstream.PDContentStream;
 import org.apache.pdfbox.contentstream.operator.Operator;
 import org.apache.pdfbox.cos.COSBase;
@@ -11,10 +12,9 @@ import org.apache.pdfbox.cos.COSObject;
 import org.apache.pdfbox.filter.MissingImageReaderException;
 import org.apache.pdfbox.io.IOUtils;
 import org.apache.pdfbox.pdfparser.PDFStreamParser;
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.PDDocumentCatalog;
-import org.apache.pdfbox.pdmodel.PDPage;
-import org.apache.pdfbox.pdmodel.PDResources;
+import org.apache.pdfbox.pdmodel.*;
+import org.apache.pdfbox.pdmodel.common.PDMetadata;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.common.PDStream;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
@@ -38,21 +38,28 @@ import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlin
 import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.util.Matrix;
+import org.apache.xmlgraphics.xmp.schemas.XMPBasicSchema;
+import org.apache.xmlgraphics.xmp.schemas.pdf.AdobePDFSchema;
 
 import javax.imageio.*;
 import javax.imageio.plugins.jpeg.JPEGImageWriteParam;
+import javax.imageio.stream.FileImageInputStream;
 import javax.imageio.stream.FileImageOutputStream;
 import javax.imageio.stream.ImageInputStream;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.List;
 
 public class PdfUtil
 {
     private enum FuncCode {
+        CONSTRUCT,
         COPY_OUTLINE,
         COVER,
         EPUB,
@@ -60,25 +67,35 @@ public class PdfUtil
         FIX_OUTLINE,
         FONTS,
         INFO,
+        JP2,
         KAKADU,
+        REPLACE_COVER,
         OBJECTS,
         OPTIMIZE,
         HAS_OUTLINE,
         CODERS,
         REPLACE,
         RESIZE,
-        SHRINK,
+        SHRINK
     }
 
     private enum FormatType {
         BMP,
         JPEG,
         JP2000,
-        PNG
+        PNG,
+        TIF
+    }
+
+    private enum MetadataId {
+        CREATION_DATE,
+        CUSTOM,
+        PRODUCER
     }
 
     private static Map<String, FuncCode> STRING2FUNC = new HashMap<>();
     static {
+        STRING2FUNC.put("construct", FuncCode.CONSTRUCT);
         STRING2FUNC.put("copy_outline", FuncCode.COPY_OUTLINE);
         STRING2FUNC.put("cover", FuncCode.COVER);
         STRING2FUNC.put("epub", FuncCode.EPUB);
@@ -86,7 +103,9 @@ public class PdfUtil
         STRING2FUNC.put("fix_outline", FuncCode.FIX_OUTLINE);
         STRING2FUNC.put("fonts", FuncCode.FONTS);
         STRING2FUNC.put("info", FuncCode.INFO);
+        STRING2FUNC.put("jp2", FuncCode.JP2);
         STRING2FUNC.put("kakadu", FuncCode.KAKADU);
+        STRING2FUNC.put("replace_cover", FuncCode.REPLACE_COVER);
         STRING2FUNC.put("objects", FuncCode.OBJECTS);
         STRING2FUNC.put("optimize", FuncCode.OPTIMIZE);
         STRING2FUNC.put("has_outline", FuncCode.HAS_OUTLINE);
@@ -102,6 +121,7 @@ public class PdfUtil
         STRING2FORMAT.put("jpeg", FormatType.JPEG);
         STRING2FORMAT.put("jpeg2000", FormatType.JP2000);
         STRING2FORMAT.put("png", FormatType.PNG);
+        STRING2FORMAT.put("tif", FormatType.TIF);
     }
 
     private static Map<FormatType, String> FORMAT2EXT = new HashMap<>();
@@ -110,6 +130,7 @@ public class PdfUtil
         FORMAT2EXT.put(FormatType.JPEG, "jpg");
         FORMAT2EXT.put(FormatType.JP2000, "jp2");
         FORMAT2EXT.put(FormatType.PNG, "png");
+        FORMAT2EXT.put(FormatType.TIF, "tif");
     }
 
     private static Map<FormatType, String> FORMAT2TYPE = new HashMap<>();
@@ -118,6 +139,7 @@ public class PdfUtil
         FORMAT2TYPE.put(FormatType.JPEG, "jpeg");
         FORMAT2TYPE.put(FormatType.JP2000, "jpeg2000");
         FORMAT2TYPE.put(FormatType.PNG, "png");
+        FORMAT2TYPE.put(FormatType.TIF, "tif");
     }
 
     /**
@@ -144,6 +166,9 @@ public class PdfUtil
         System.setProperty("sun.java2d.cmm", "sun.java2d.cmm.kcms.KcmsServiceProvider");
         try {
             switch (funcCode) {
+                case CONSTRUCT:
+                    constructPDF(args);
+                    break;
                 case COPY_OUTLINE:
                     copyOutlinePDF(args);
                     break;
@@ -165,8 +190,14 @@ public class PdfUtil
                 case INFO:
                     infoPDF(args);
                     break;
+                case JP2:
+                    readImages(args);
+                    break;
                 case KAKADU:
                     kakaduImages(args);
+                    break;
+                case REPLACE_COVER:
+                    replaceCoverPDF(args);
                     break;
                 case OBJECTS:
                     objectsPDF(args);
@@ -194,6 +225,150 @@ public class PdfUtil
             }
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    private static void constructPDF(
+            String[] params
+    ) throws Exception
+    {
+        System.out.printf("Executing function \"%s\"\n", params[0]);
+
+        Options options = new Options();
+        options.addOption("r", "resize_pct", true, "Resize %" );
+
+        CommandLineParser parser = new DefaultParser();
+        CommandLine cmdLine = null;
+        boolean displayHelp = params.length < 2;
+        if (params.length > 1) {
+            try {
+                cmdLine = parser.parse(options, params);
+            } catch (ParseException e) {
+                displayHelp = true;
+                System.out.printf("Error: %s\n", e.getLocalizedMessage());
+            }
+        }
+        if (displayHelp) {
+            HelpFormatter formatter = new HelpFormatter();
+            formatter.printHelp(String.format("%s [options] barcode_dir [barcode_dir...]", params[0]), options);
+            return;
+        }
+
+        int resizePct = Integer.parseInt(cmdLine.getOptionValue("r", "100"));
+        //FormatType formatType = FormatType.JPEG;
+        //String extractType = FORMAT2TYPE.get(formatType);
+        //String extractExt = FORMAT2EXT.get(formatType);
+
+        List<String> dirList = cmdLine.getArgList();
+        for (String dirName : dirList.subList(1, dirList.size())) {
+            File dirFile = new File(dirName);
+            if (!dirFile.exists() || !dirFile.isDirectory()) {
+                System.out.printf("Error: invalid directory path \"%s\".", dirName);
+                continue;
+            }
+
+            File outputFile = new File(dirFile, String.format("%s_%03dpct.pdf", dirFile.getName(), resizePct));
+            System.out.printf("Creating PDF \"%s\".\n", outputFile.getName());
+
+            // Set the document metadata
+            HashMap<MetadataId, String> properties = new HashMap<>();
+            properties.put(MetadataId.CREATION_DATE, LocalDateTime.now().toString());
+            properties.put(MetadataId.PRODUCER, "Michigan Publishing Services");
+
+            PDDocument pdfDoc = new PDDocument();
+            docAddMetadata(pdfDoc, properties);
+
+            Set<String> pathList = listFiles(dirFile);
+            List<String> nameList = new ArrayList<>(pathList);
+            Collections.sort(nameList);
+            for (String imgName : nameList) {
+                File imgFile = new File(imgName);
+                if (!imgFile.getName().startsWith("0")) {
+                    System.out.printf("Warning: skipping file \"%s\".\n", imgFile.getName());
+                    continue;
+                }
+
+                String extension = FilenameUtils.getExtension(imgFile.getName());
+                if (extension.equalsIgnoreCase("jp2")
+                        || extension.equalsIgnoreCase("bmp")
+                        || extension.equalsIgnoreCase("jpg")) {
+                    System.out.printf("Skipping file \"%s\".\n", imgFile.getName());
+                    continue;
+                }
+
+                System.out.printf("Processing file \"%s\".\n", imgFile.getName());
+
+                PDPage page = new PDPage();
+                pdfDoc.addPage(page);
+
+                FileImageInputStream is = new FileImageInputStream(imgFile);
+                ImageReader reader = ImageIO.getImageReaders(is).next();
+                ImageReadParam param = reader.getDefaultReadParam();
+                reader.setInput(is);
+
+                PDImageXObject newObj = null;
+                try {
+                    BufferedImage pageImage = reader.read(0, param);
+                    int width = pageImage.getWidth();
+                    int height = pageImage.getHeight();
+
+                    if (resizePct != 100) {
+                        Dimension imageDim = new Dimension(width, height);
+                        int newWidth = ((width * resizePct) / 100);
+                        int newHeight = ((height * resizePct) / 100);
+                        Dimension newImageDim = new Dimension(newWidth, newHeight);
+
+                        Dimension newDim = getScaledDimension(imageDim, newImageDim);
+                        BufferedImage scaledImage = getScaledInstance(
+                                pageImage,
+                                (int) newDim.getWidth(),
+                                (int) newDim.getHeight(),
+                                RenderingHints.VALUE_INTERPOLATION_BICUBIC,
+                                true);
+                        pageImage = scaledImage;
+
+                        /*
+                        File scaledFile = new File(dirFile, String.format("page.%s", extractExt));
+                        System.out.printf("extractType=%s\n", extractType);
+                        ImageIO.write(scaledImage, extractType, scaledFile);
+                        newObj = PDImageXObject.createFromFile(scaledFile.getAbsolutePath(), pdfDoc);
+                        is = new FileImageInputStream(imgFile);
+                        reader = ImageIO.getImageReaders(is).next();
+                        param = reader.getDefaultReadParam();
+                        reader.setInput(is);
+                        BufferedImage newScaledImage = reader.read(0, param);
+                        newObj = LosslessFactory.createFromImage(pdfDoc, newScaledImage);
+                        */
+                    }
+
+                    newObj = LosslessFactory.createFromImage(pdfDoc, pageImage);
+                    PDPageContentStream cs = new PDPageContentStream(pdfDoc, page, PDPageContentStream.AppendMode.APPEND, false);
+                    PDRectangle mediaBox = page.getMediaBox();
+                    float pageRatio = mediaBox.getWidth() * 100 / mediaBox.getHeight();
+                    float imageRatio = width * 100 / height;
+                    float newWidth = mediaBox.getWidth();
+                    float newHeight = mediaBox.getWidth() * height / width;
+                    int x = 0;
+                    int y = (int)((mediaBox.getHeight() - newHeight) / 2);
+                    if (imageRatio < pageRatio) {
+                        newWidth = width * mediaBox.getHeight() / height;
+                        newHeight = mediaBox.getHeight();
+                        x = (int)((mediaBox.getWidth() - newWidth) / 2);
+                        y = 0;
+                    }
+
+                    cs.drawImage(newObj, x, y, newWidth, newHeight);
+                    cs.close();
+                } catch (Exception e) {
+                    String msg = String.format("Error: reading image \"%s\".", imgFile.getName());
+                    pageAddText(pdfDoc, page, msg);
+                    System.out.println(e.getLocalizedMessage());
+                    continue;
+                }
+            }
+            System.out.printf("Saving PDF \"%s\".\n", outputFile.getName());
+            pdfDoc.save(outputFile);
+            pdfDoc.close();
         }
     }
 
@@ -483,12 +658,31 @@ public class PdfUtil
     ) throws Exception
     {
         System.out.printf("Executing function \"%s\"\n", params[0]);
-        if (params.length < 2) {
-            throw new Exception("Usage: extract <pdf_file> [<pdf_file>...]");
+
+        Options options = new Options();
+        options.addOption("f", "image_format", true, "Cover format [bmp|jpeg|jpeg2000|png]" );
+
+        CommandLineParser parser = new DefaultParser();
+        CommandLine cmdLine = null;
+        boolean displayHelp = params.length < 1;
+        if (params.length > 2) {
+            try {
+                cmdLine = parser.parse(options, params);
+            } catch (ParseException e) {
+                displayHelp = true;
+                System.out.printf("Error: %s\n", e.getLocalizedMessage());
+            }
+        }
+        if (displayHelp) {
+            HelpFormatter formatter = new HelpFormatter();
+            formatter.printHelp(String.format("%s [options] pdf_file [pdf_file...]", params[0]), options);
+            return;
         }
 
-        for (int i = 1; i < params.length; i++) {
-            String pdfFileName = params[i];
+        FormatType coverFormatType = cmdLine.hasOption("f") ? STRING2FORMAT.get(cmdLine.getOptionValue("f")) : FormatType.BMP;
+
+        List<String> pdfFileList = cmdLine.getArgList();
+        for (String pdfFileName : pdfFileList.subList(1, pdfFileList.size())) {
             File pdfFile = new File(pdfFileName);
             if (!pdfFile.exists()) {
                 throw new Exception(String.format("Error: invalid file path \"%s\".", pdfFileName));
@@ -508,7 +702,7 @@ public class PdfUtil
             PDDocument pdfDoc = PDDocument.load(pdfFile);
             extractPDFImages(
                     pdfDoc,
-                    FormatType.JPEG,
+                    coverFormatType,
                     outputDirFile
             );
 
@@ -536,21 +730,26 @@ public class PdfUtil
 
             // Traverse source page resources.
             int imageNum = 0;
+            int totalPageWidth = 0;
+            int totalPageHeight = 0;
             for (COSName name : xobjectNames) {
                 if (resources.isImageXObject(name)) {
                     imageNum += 1;
 
                     PDImageXObject imageObj = (PDImageXObject) resources.getXObject(name);
+                    totalPageWidth += imageObj.getWidth();
+                    totalPageHeight += imageObj.getHeight();
                     BufferedImage image = imageObj.getImage();
 
-                    File outputFile = new File(outputDirFile, String.format("Page_%04d_Image_%04d.%s",
-                            pageNum, imageNum, extractExt));
+                    File outputFile = new File(outputDirFile, String.format("Page_%04d_Image_%04d_%s.%s",
+                            pageNum, imageNum, name.getName(), extractExt));
 
                     System.out.printf("Extracting image %s %dx%d\n",
                             outputFile.getName(), image.getWidth(), image.getHeight());
                     ImageIO.write(image, extractType, outputFile);
                 }
             }
+            System.out.printf("Page %d: Width: %d Height: %d\n", pageNum, totalPageWidth, totalPageHeight);
         }
     }
 
@@ -1241,6 +1440,228 @@ public class PdfUtil
         }
     }
 
+    private static void replaceCoverPDF(
+            String[] params
+    ) throws Exception
+    {
+        System.out.printf("Executing function \"%s\"\n", params[0]);
+
+        Options options = new Options();
+        options.addOption("c", "cover_format", true, "Cover format [bmp|jpeg|jpeg2000|png]" );
+        options.addOption("p", "cover_page", true, "Cover page [0-9]+" );
+
+        CommandLineParser parser = new DefaultParser();
+        CommandLine cmdLine = null;
+        boolean displayHelp = params.length < 2;
+        if (params.length > 1) {
+            try {
+                cmdLine = parser.parse(options, params);
+            } catch (ParseException e) {
+                displayHelp = true;
+                System.out.printf("Error: %s\n", e.getLocalizedMessage());
+            }
+        }
+        if (displayHelp) {
+            HelpFormatter formatter = new HelpFormatter();
+            formatter.printHelp("optimize [options] pdf_file [pdf_file...]", options);
+            return;
+        }
+
+        FormatType coverFormatType = cmdLine.hasOption("c") ? STRING2FORMAT.get(cmdLine.getOptionValue("c")) : FormatType.PNG;
+        int coverPageNumber = Integer.parseInt(cmdLine.getOptionValue("p", "0"));
+
+        List<String> pdfFileList = cmdLine.getArgList();
+        for (String pdfFileName : pdfFileList.subList(1, pdfFileList.size())) {
+            File pdfFile = new File(pdfFileName);
+            if (!pdfFile.exists()) {
+                throw new Exception(String.format("Error: invalid file path \"%s\".", pdfFileName));
+            }
+
+            int extPos = pdfFile.getName().lastIndexOf(".");
+            String baseName = extPos == -1 ?
+                    pdfFile.getName() : pdfFile.getName().substring(0, extPos);
+            String extractExt = FORMAT2EXT.get(coverFormatType);
+            File outputFile = new File(pdfFile.getAbsoluteFile().getParentFile(), baseName + "_cover_merge.pdf");
+
+            PDDocument pdfDoc = PDDocument.load(pdfFile);
+            replaceCoverPDFImages(
+                    pdfDoc,
+                    coverPageNumber,
+                    coverFormatType,
+                    outputFile
+            );
+            //pdfDoc.save(outputFile);
+            pdfDoc.close();
+        }
+    }
+
+    private static void replaceCoverPDFImages(
+            PDDocument pdfDoc,
+            int coverImageIndex,
+            FormatType formatType,
+            File outputFile
+    ) throws Exception
+    {
+        String extractExt = FORMAT2EXT.get(formatType);
+        File coverPageFile = new File(outputFile.getParentFile(), String.format("cover_page_%08d.%s",
+                coverImageIndex+1, extractExt));
+        /*
+        // Find the cover page. Save it as an image.
+        PDPage coverPage = pdfDoc.getPage(coverImageIndex);
+        PDFRenderer pdfRenderer = new PDFRenderer(pdfDoc);
+
+        String extractType = FORMAT2TYPE.get(formatType);
+        BufferedImage image = pdfRenderer.renderImage(coverImageIndex);
+        ImageIO.write(image, extractType, coverPageFile);
+        */
+
+        // Create a new PDF, replacing the cover page
+        // with the extracted image.
+        PDDocument newPdfDoc = new PDDocument();
+        for (int pageNdx = 0; pageNdx < pdfDoc.getNumberOfPages(); pageNdx++) {
+            PDPage page = pdfDoc.getPage(pageNdx);
+            if (pageNdx != coverImageIndex) {
+                newPdfDoc.addPage(page);
+                continue;
+            }
+
+            PDPage newCoverPage = new PDPage();
+            newPdfDoc.addPage(newCoverPage);
+
+            PDImageXObject newObj = PDImageXObject.createFromFile(coverPageFile.getAbsolutePath(), newPdfDoc);
+            float widthScale = newCoverPage.getMediaBox().getWidth() / newObj.getWidth();
+            float heightScale = newCoverPage.getMediaBox().getHeight() / newObj.getHeight();
+
+            PDPageContentStream cs = new PDPageContentStream(newPdfDoc, newCoverPage, PDPageContentStream.AppendMode.APPEND, false);
+            cs.drawImage(newObj, 0, 0, (int)(newObj.getWidth()*widthScale), (int)(newObj.getHeight()*heightScale));
+            cs.close();
+        }
+
+        newPdfDoc.save(outputFile);
+        newPdfDoc.close();
+    }
+
+    private static void replaceCoverPDFImagesNEW(
+            PDDocument pdfDoc,
+            int coverImageIndex,
+            FormatType formatType,
+            File outputFile
+    ) throws Exception
+    {
+        PDPage coverPage = pdfDoc.getPage(coverImageIndex);
+        PDRectangle coverArtBox = coverPage.getArtBox();
+        PDRectangle coverBBox = coverPage.getBBox();
+        PDRectangle coverCropBox = coverPage.getCropBox();
+        PDRectangle coverMediaBox = coverPage.getMediaBox();
+        PDRectangle coverTrimBox = coverPage.getTrimBox();
+
+        PDPage nextPage = pdfDoc.getPage(coverImageIndex+1);
+        PDRectangle nextArtBox = coverPage.getArtBox();
+        PDRectangle nextBBox = coverPage.getBBox();
+        PDRectangle nextCropBox = coverPage.getCropBox();
+        PDRectangle nextMediaBox = coverPage.getMediaBox();
+        PDRectangle nextTrimBox = coverPage.getTrimBox();
+
+        PDPage page = new PDPage();
+        PDRectangle artBox = coverPage.getArtBox();
+        PDRectangle BBox = coverPage.getBBox();
+        PDRectangle cropBox = coverPage.getCropBox();
+        PDRectangle mediaBox = coverPage.getMediaBox();
+        PDRectangle trimBox = coverPage.getTrimBox();
+        pdfDoc.addPage(page);
+
+        File imageFile = new File(outputFile.getParent(), "9781407323282_cover_fix.png");
+        //File imageFile = new File(outputFile.getParent(), "9780472901234.jpg");
+        PDImageXObject newObj = PDImageXObject.createFromFile(imageFile.getAbsolutePath(), pdfDoc);
+        float widthScale = page.getMediaBox().getWidth() / newObj.getWidth();
+        float heightScale = page.getMediaBox().getHeight() / newObj.getHeight();
+        /*
+        BufferedImage newImage = newObj.getImage();
+
+        //creating the PDPageContentStream object
+        Dimension imageDim = new Dimension(newObj.getWidth(), newObj.getHeight());
+        //float scale = page.getMediaBox().getWidth() / newObj.getWidth();
+        Dimension newImageDim = new Dimension(newWidth, newHeight);
+        Dimension newDim = getScaledDimension(imageDim, newImageDim);
+        BufferedImage scaledImage = getScaledInstance(
+                newImage,
+                (int)newDim.getWidth(),
+                (int)newDim.getHeight(),
+                RenderingHints.VALUE_INTERPOLATION_BICUBIC,
+                true);
+
+        //Drawing the image in the PDF document
+        PDImageXObject scaledObj = LosslessFactory.createFromImage(pdfDoc, scaledImage);
+        */
+
+        PDPageContentStream cs = new PDPageContentStream(pdfDoc, page, PDPageContentStream.AppendMode.APPEND, false);
+        cs.drawImage(newObj, 0, 0, (int)(newObj.getWidth()*widthScale), (int)(newObj.getHeight()*heightScale));
+        //cs.drawImage(newObj, 0, 0, mediaBox.getWidth(), mediaBox.getHeight());
+        cs.close();
+        System.out.println("Image inserted");
+    }
+
+    private static void replaceCoverPDFImagesCURRENT(
+            PDDocument pdfDoc,
+            int coverImageIndex,
+            FormatType formatType,
+            File outputFile
+    ) throws Exception
+    {
+        PDPage page = pdfDoc.getPage(coverImageIndex);
+
+        // Get the page resources.
+        PDResources resources = page.getResources();
+        PDResources newResources = new PDResources();
+
+        Iterable<COSName> xobjectNames = resources.getXObjectNames();
+
+        // Traverse source page resources.
+        COSName imageName = null;
+        for (COSName name : xobjectNames) {
+            if (resources.isImageXObject(name)) {
+                if (imageName == null) {
+                    imageName = name;
+                }
+                // Skip it.
+                continue;
+            }
+            newResources.put(name, resources.getXObject(name));
+        }
+        if (imageName != null) {
+            page.setResources(newResources);
+
+            File imageFile = new File(outputFile.getParent(), "9781407323282_cover_fix.png");
+            PDImageXObject newObj = PDImageXObject.createFromFile(imageFile.getAbsolutePath(), pdfDoc);
+
+            /*
+            BufferedImage newImage = newObj.getImage();
+            Dimension imageDim = new Dimension(newImage.getWidth(), newImage.getHeight());
+            PDRectangle mediaBox = page.getMediaBox();
+            Dimension newImageDim = new Dimension((int)mediaBox.getWidth(), (int)mediaBox.getHeight());
+            Dimension newDim = getScaledDimension(imageDim, newImageDim);
+            BufferedImage scaledImage = getScaledInstance(
+                    newImage,
+                    (int)newDim.getWidth(),
+                    (int)newDim.getHeight(),
+                    RenderingHints.VALUE_INTERPOLATION_BICUBIC,
+                    true);
+
+            //Drawing the image in the PDF document
+            PDImageXObject scaledObj = LosslessFactory.createFromImage(pdfDoc, scaledImage);
+            */
+
+            //creating the PDPageContentStream object
+            PDPageContentStream contents = new PDPageContentStream(pdfDoc, page);
+            contents.drawImage(newObj, 0, 0);
+
+            System.out.println("Image inserted");
+
+            //Closing the PDPageContentStream object
+            contents.close();
+        }
+    }
+
     private static void replacePDF(
             String[] params
         ) throws Exception
@@ -1474,7 +1895,112 @@ public class PdfUtil
         //pdfDoc.getDocumentCatalog().setStructureTreeRoot(null);
     }
 
-    private static void processContent(PDContentStream content) throws IOException {
+    private static void readImages(
+            String[] params
+        ) throws Exception
+    {
+        System.out.printf("Executing function \"%s\"\n", params[0]);
+
+        ImageIO.scanForPlugins();
+        for (int i = 1; i < params.length; i++) {
+            File imgFile = new File(params[i]);
+            if (!imgFile.exists()) {
+                System.out.printf("Error: invalid file path \"%s\".", params[i]);
+                continue;
+            }
+            System.out.printf("Processing file \"%s\".\n", imgFile.getName());
+
+            ImageInputStream is = null;
+            try {
+                // Create the stream for the image.
+                is = ImageIO.createImageInputStream(imgFile);
+
+                // get the first matching reader
+                Iterator<ImageReader> iterator = ImageIO.getImageReaders(is);
+                boolean hasNext = iterator.hasNext();
+                if (!hasNext) {
+                    System.err.println("\tError: no reader for image \"" + imgFile.getName() + "\".");
+                    is.close();
+                    continue;
+                }
+
+                ImageReader imageReader = iterator.next();
+                imageReader.setInput(is);
+
+                int pages = imageReader.getNumImages(true);
+                if (pages > 1) {
+                    // Image file contains multiple images. Not expected.
+                    System.out.println("\tImage has " + pages + " pages. Using first.");
+                }
+
+                BufferedImage bufferedImage = imageReader.read(0);
+                //ImageIO.write(bufferedImage, jpg, imgDestFile);
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                if (is != null) {
+                    is.close();
+                }
+            }
+        }
+    }
+
+    private static void docAddMetadata(
+            PDDocument pdfDoc,
+            Map<MetadataId, String> properties
+        )
+    {
+        PDDocumentInformation info = pdfDoc.getDocumentInformation();
+
+        for (Map.Entry<MetadataId, String> entry : properties.entrySet()) {
+
+            System.out.println(entry.getKey() + ":" + entry.getValue());
+            if (entry.getValue().isEmpty()) {
+                continue;
+            }
+
+            switch (entry.getKey()) {
+                case CREATION_DATE:
+                    String dateStr = entry.getValue();
+                    LocalDateTime dateTime = LocalDateTime.parse(dateStr);
+
+                    Calendar cal = new GregorianCalendar();
+                    cal.set(Calendar.YEAR, dateTime.getYear());
+                    cal.set(Calendar.MONTH, dateTime.getMonthValue());
+                    cal.set(Calendar.DAY_OF_MONTH, dateTime.getDayOfMonth());
+
+                    info.setCreationDate(cal);
+                    break;
+                case CUSTOM:
+                    String property = entry.getValue();
+                    String[] prop = property.split("=");
+                    info.setCustomMetadataValue(prop[0], prop[1]);
+                    break;
+                case PRODUCER:
+                    info.setProducer(entry.getValue());
+                    break;
+            }
+        }
+    }
+
+    private static void pageAddText(
+            PDDocument pdfDoc,
+            PDPage page,
+            String text
+        ) throws Exception
+    {
+        PDPageContentStream contentStream = new PDPageContentStream(pdfDoc, page);
+        contentStream.beginText();
+        contentStream.newLineAtOffset(25, 700);
+
+        contentStream.setFont(PDType1Font.TIMES_ITALIC, 20);
+        contentStream.showText(text);
+        contentStream.endText();
+        contentStream.close();}
+
+    private static void processContent(PDContentStream content)
+            throws IOException
+    {
         Set<COSName> usedFontNames = new HashSet<>();
         //InputStream is = content.getContents();
         PDFStreamParser parser = new PDFStreamParser(content);
@@ -1722,6 +2248,22 @@ public class PdfUtil
         return ret;
     }
 
+    public static Set<String> listFiles(File dirFile) throws IOException
+    {
+        Set<String> fileList = new HashSet<>();
+        Files.walkFileTree(Paths.get(dirFile.getAbsolutePath()), new SimpleFileVisitor<Path>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
+                    throws IOException {
+                if (!Files.isDirectory(file)) {
+                    fileList.add(file.toString());
+                }
+                return FileVisitResult.CONTINUE;
+            }
+        });
+        return fileList;
+    }
+
     private static void dumpCoders(
             String[] params
     ) throws Exception
@@ -1731,7 +2273,6 @@ public class PdfUtil
             throw new Exception(String.format("Usage: %s", params[0]));
         }
 
-        /*
         System.out.println("Reader suffixes:");
         String[] readerFileSuffixes = ImageIO.getReaderFileSuffixes();
         for (String suffix : readerFileSuffixes) {
@@ -1743,7 +2284,6 @@ public class PdfUtil
         for (String suffix : writerFileSuffixes) {
             System.out.println(suffix);
         }
-        */
 
         System.out.println("Writer formats:");
         String[] writerFormats = ImageIO.getWriterFormatNames();
